@@ -1,3 +1,13 @@
+This is my attempt at porting the train.py and supporting modules in training/ from the official StyleGAN3 PyTorch implementation to run on Google's TPU Research Cloud platform by replacing the PyTorch CUDA acceleration bits with the equivalent
+from the PyTorch XLA library supporting TPU hardware acceleration.
+
+The TPU support is auto-detected and should work the same as running train.py with multiple GPUs (i.e. the number of TPUs to use should be specified with the --gpus= command line option, etc.). The TPUs, if present
+will be detected and will automatically override any GPU accelerated code. There are a few custom TF operator plugins which would be compiled into GPU shaders using the nvcc compiler from the CUDA SDK when possible, 
+which obviously won't work at all with the TPUs. Fortunately, the original implementation falls back gracefully to a pure python reference implementation intended to run on the CPU as-is for performance comparison and 
+validation of the GPU-optimized code. For now, we force choosing the reference implementations when training on TPU hardware for simplicity.
+
+Note that I am not attempting to port the inference, analysis or visualisation functionality to TPUs as they run just fine on my local machine. ;)
+
 ## Alias-Free Generative Adversarial Networks (StyleGAN3)<br><sub>Official PyTorch implementation of the NeurIPS 2021 paper</sub>
 
 ![Teaser image](./docs/stylegan3-teaser-1920x1006.png)
