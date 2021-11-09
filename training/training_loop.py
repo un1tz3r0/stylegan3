@@ -1,3 +1,4 @@
+
 # Copyright (c) 2021, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
@@ -18,6 +19,16 @@ import PIL.Image
 import numpy as np
 import torch
 import dnnlib
+
+# check for tpu presence
+import os
+use_tpu = 'COLAB_TPU_ADDR' in os.environ.keys()
+
+if use_tpu:
+    # imports the torch_xla package
+    import torch_xla
+    import torch_xla.core.xla_model as xm
+
 from torch_utils import misc
 from torch_utils import training_stats
 from torch_utils.ops import conv2d_gradfix
@@ -121,15 +132,20 @@ def training_loop(
     abort_fn                = None,     # Callback function for determining whether to abort training. Must return consistent results across ranks.
     progress_fn             = None,     # Callback function for updating training progress. Called for all ranks.
 ):
+
     # Initialize.
     start_time = time.time()
-    device = torch.device('cuda', rank)
+    if use_tpu:
+        device = xm.xla_device(n=rank, devkind='TPU')
+    else:
+        device = torch.device('cuda', rank)
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
-    torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
-    torch.backends.cuda.matmul.allow_tf32 = False       # Improves numerical accuracy.
-    torch.backends.cudnn.allow_tf32 = False             # Improves numerical accuracy.
-    conv2d_gradfix.enabled = True                       # Improves training speed.
+    if not use_tpu:
+		    torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
+		    torch.backends.cuda.matmul.allow_tf32 = False       # Improves numerical accuracy.
+		    torch.backends.cudnn.allow_tf32 = False             # Improves numerical accuracy.
+		conv2d_gradfix.enabled = True                       # Improves training speed.
     grid_sample_gradfix.enabled = True                  # Avoids errors with the augmentation pipe.
 
     # Load training set.
