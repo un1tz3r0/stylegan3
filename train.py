@@ -25,7 +25,8 @@ if use_tpu:
 	import torch_xla
 	import torch_xla.core.xla_model as xm
 	import torch_xla.distributed.xla_multiprocessing as xmp
-
+	import tensorflow as tf
+	
 import dnnlib
 from training import training_loop
 from metrics import metric_main
