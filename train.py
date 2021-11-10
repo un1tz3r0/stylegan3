@@ -16,17 +16,25 @@ import json
 import tempfile
 import torch
 
-
+# detect TPU hardware, set use_tpu to True if present
 import os
 use_tpu = 'COLAB_TPU_ADDR' in os.environ.keys()
 
+# if using TPU acceleration, we need to import the torch_xla l
 if use_tpu:
 	# imports the torch_xla package
+	import tensorflow as tf
 	import torch_xla
 	import torch_xla.core.xla_model as xm
+	import torch_xla.debug.metrics as met
+	import torch_xla.distributed.parallel_loader as pl
+	import torch_xla.utils.utils as xu
 	import torch_xla.distributed.xla_multiprocessing as xmp
-	import tensorflow as tf
-	
+	import torch_xla.test.test_utils as test_utils
+	import torch.nn as nn
+	import torch.multiprocessing as mp
+	import torch.distributed as dist
+
 import dnnlib
 from training import training_loop
 from metrics import metric_main
@@ -45,7 +53,7 @@ def subprocess_fn(rank, c, temp_dir):
 		dnnlib.util.Logger(file_name=os.path.join(c.run_dir, 'log.txt'), file_mode='a', should_flush=True)
 
 		# Init torch.distributed.
-		if c.num_gpus > 1:
+		if tpu==None and c.num_gpus > 1:
 				init_file = os.path.abspath(os.path.join(temp_dir, '.torch_distributed_init'))
 				if os.name == 'nt':
 						init_method = 'file:///' + init_file.replace('\\', '/')
@@ -53,9 +61,6 @@ def subprocess_fn(rank, c, temp_dir):
 				else:
 						init_method = f'file://{init_file}'
 						torch.distributed.init_process_group(backend='nccl' if use_tpu == None else 'xla-tpu', init_method=init_method, rank=rank, world_size=c.num_gpus)
-
-
-
 
 		# Init torch_utils.
 		if tpu == None:
