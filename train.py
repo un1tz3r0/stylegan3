@@ -34,6 +34,8 @@ if use_tpu:
 	import torch.nn as nn
 	import torch.multiprocessing as mp
 	import torch.distributed as dist
+	
+	print(xm.get_xla_supported_devices(devkind='TPU', max_devices=8))
 
 import dnnlib
 from training import training_loop
@@ -42,10 +44,12 @@ from torch_utils import training_stats
 from torch_utils import custom_ops
 
 # Detect TPU hardware
-try:
-		tpu = tf.distribute.cluster_resolver.TPUClusterResolver() # TPU detection
-except ValueError: # If TPU not found
-		tpu = None
+#try:
+#		tpu = tf.distribute.cluster_resolver.TPUClusterResolver() # TPU detection
+#except ValueError: # If TPU not found
+#		tpu = None
+
+
 
 #----------------------------------------------------------------------------
 
@@ -53,7 +57,7 @@ def subprocess_fn(rank, c, temp_dir):
 		dnnlib.util.Logger(file_name=os.path.join(c.run_dir, 'log.txt'), file_mode='a', should_flush=True)
 
 		# Init torch.distributed.
-		if tpu==None and c.num_gpus > 1:
+		if use_tpu==None and c.num_gpus > 1:
 				init_file = os.path.abspath(os.path.join(temp_dir, '.torch_distributed_init'))
 				if os.name == 'nt':
 						init_method = 'file:///' + init_file.replace('\\', '/')
@@ -63,7 +67,7 @@ def subprocess_fn(rank, c, temp_dir):
 						torch.distributed.init_process_group(backend='nccl' if use_tpu == None else 'xla-tpu', init_method=init_method, rank=rank, world_size=c.num_gpus)
 
 		# Init torch_utils.
-		if tpu == None:
+		if use_tpu == None:
 			sync_device = torch.device('cuda', rank) if c.num_gpus > 1 else None
 			training_stats.init_multiprocessing(rank=rank, sync_device=sync_device)
 		else:
@@ -120,7 +124,8 @@ def launch_training(c, desc, outdir, dry_run):
 
 		# Launch processes.
 		print('Launching processes...')
-		torch.multiprocessing.set_start_method('spawn')
+		if not use_tpu:
+			torch.multiprocessing.set_start_method('spawn')
 		with tempfile.TemporaryDirectory() as temp_dir:
 				if use_tpu:
 						xmp.spawn(subprocess_fn, args=(c, temp_dir), nprocs=c.num_gpus, start_method='fork')
