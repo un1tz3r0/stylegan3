@@ -10,7 +10,7 @@
 
 import os
 import re
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Callable
 
 import click
 import dnnlib
@@ -80,12 +80,13 @@ def make_transform(translate: Tuple[float,float], angle: float):
 def generate_images(
     network_pkl: str,
     seeds: List[int],
-    truncation_psi: float,
-    noise_mode: str,
-    outdir: str,
-    translate: Tuple[float,float],
-    rotate: float,
-    class_idx: Optional[int]
+    truncation_psi: float = 1.0,
+    noise_mode: str = 'const',
+    outdir: str = None,
+    translate: Tuple[float,float] = (0, 0),
+    rotate: float = 0,
+    class_idx: Optional[int] = None,
+    callback: Optional[Callable[[int, int, PIL.Image.Image], None]] = None,
 ):
     """Generate images using pretrained network pickle.
 
@@ -107,7 +108,8 @@ def generate_images(
     with dnnlib.util.open_url(network_pkl) as f:
         G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
 
-    os.makedirs(outdir, exist_ok=True)
+    if not (callback != None and callable(callback)): 
+      os.makedirs(outdir, exist_ok=True)
 
     # Labels.
     label = torch.zeros([1, G.c_dim], device=device)
@@ -134,8 +136,11 @@ def generate_images(
 
         img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
         img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
-        PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/seed{seed:04d}.png')
-
+        pilim = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB')
+        if callback != None and callable(callback): 
+          callback(seed_idx, seed, pilim)
+        else:
+          pilim.save(f'{outdir}/seed{seed:04d}.png')
 
 #----------------------------------------------------------------------------
 
