@@ -82,8 +82,9 @@ def launch_training(c, desc, outdir, dry_run):
         return
 
     # Create output directory.
-    print('Creating output directory...')
-    os.makedirs(c.run_dir)
+    if not os.path.exists(c.run_dir):
+        print('Creating output directory...')
+        os.makedirs(c.run_dir)
     with open(os.path.join(c.run_dir, 'training_options.json'), 'wt') as f:
         json.dump(c, f, indent=2)
 
@@ -280,7 +281,10 @@ def main(**kwargs):
     }
 
     if opts.aug != 'noaug':
-        c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **augpipe_specs[opts.augpipe])
+        if opts.augpipe in augpipe_specs.keys():
+            c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **augpipe_specs[opts.augpipe])
+        else:
+            c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe')
         if opts.aug == 'ada':
             c.ada_target = opts.target
         if opts.aug == 'fixed':
