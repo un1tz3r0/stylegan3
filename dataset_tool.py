@@ -26,45 +26,57 @@ import numpy as np
 import PIL.Image
 from tqdm import tqdm
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def error(msg):
     print('Error: ' + msg)
     sys.exit(1)
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def parse_tuple(s: str) -> Tuple[int, int]:
-    '''Parse a 'M,N' or 'MxN' integer tuple.
+    """Parse a 'M,N' or 'MxN' integer tuple.
 
     Example:
         '4x2' returns (4,2)
         '0,1' returns (0,1)
-    '''
+    """
     m = re.match(r'^(\d+)[x,](\d+)$', s)
     if m:
         return (int(m.group(1)), int(m.group(2)))
     raise ValueError(f'cannot parse tuple {s}')
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def maybe_min(a: int, b: Optional[int]) -> int:
     if b is not None:
         return min(a, b)
     return a
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def file_ext(name: Union[str, Path]) -> str:
     return str(name).split('.')[-1]
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def is_image_ext(fname: Union[str, Path]) -> bool:
     ext = file_ext(fname).lower()
     return f'.{ext}' in PIL.Image.EXTENSION # type: ignore
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def open_image_folder(source_dir, *, max_images: Optional[int]):
     input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if is_image_ext(f) and os.path.isfile(f)]
@@ -86,13 +98,20 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
         for idx, fname in enumerate(input_images):
             arch_fname = os.path.relpath(fname, source_dir)
             arch_fname = arch_fname.replace('\\', '/')
-            img = np.array(PIL.Image.open(fname))
+            # Adding Pull #39 from Andreas Jansson: https://github.com/NVlabs/stylegan3/pull/39
+            try:
+                img = np.array(PIL.Image.open(fname).convert('RGB'))  # Convert grayscale to RGB
+            except Exception as e:
+                sys.stderr.write(f'Failed to read {fname}: {e}')
+                continue
             yield dict(img=img, label=labels.get(arch_fname))
             if idx >= max_idx-1:
                 break
     return max_idx, iterate_images()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def open_image_zip(source, *, max_images: Optional[int]):
     with zipfile.ZipFile(source, mode='r') as z:
@@ -121,7 +140,9 @@ def open_image_zip(source, *, max_images: Optional[int]):
                     break
     return max_idx, iterate_images()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def open_lmdb(lmdb_dir: str, *, max_images: Optional[int]):
     import cv2  # pip install opencv-python # pylint: disable=import-error
@@ -138,7 +159,7 @@ def open_lmdb(lmdb_dir: str, *, max_images: Optional[int]):
                         img = cv2.imdecode(np.frombuffer(value, dtype=np.uint8), 1)
                         if img is None:
                             raise IOError('cv2.imdecode failed')
-                        img = img[:, :, ::-1] # BGR => RGB
+                        img = img[:, :, ::-1]  # BGR => RGB
                     except IOError:
                         img = np.array(PIL.Image.open(io.BytesIO(value)))
                     yield dict(img=img, label=None)
@@ -149,7 +170,9 @@ def open_lmdb(lmdb_dir: str, *, max_images: Optional[int]):
 
     return max_idx, iterate_images()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def open_cifar10(tarball: str, *, max_images: Optional[int]):
     images = []
@@ -181,7 +204,9 @@ def open_cifar10(tarball: str, *, max_images: Optional[int]):
 
     return max_idx, iterate_images()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def open_mnist(images_gz: str, *, max_images: Optional[int]):
     labels_gz = images_gz.replace('-images-idx3-ubyte.gz', '-labels-idx1-ubyte.gz')
@@ -211,7 +236,9 @@ def open_mnist(images_gz: str, *, max_images: Optional[int]):
 
     return max_idx, iterate_images()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+
 
 def make_transform(
     transform: Optional[str],
@@ -231,7 +258,8 @@ def make_transform(
 
     def center_crop(width, height, img):
         crop = np.min(img.shape[:2])
-        img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
+        img = img[(img.shape[0] - crop) // 2: (img.shape[0] + crop) // 2,
+                  (img.shape[1] - crop) // 2: (img.shape[1] + crop) // 2]
         img = PIL.Image.fromarray(img, 'RGB')
         img = img.resize((width, height), PIL.Image.LANCZOS)
         return np.array(img)
@@ -241,7 +269,7 @@ def make_transform(
         if img.shape[1] < width or ch < height:
             return None
 
-        img = img[(img.shape[0] - ch) // 2 : (img.shape[0] + ch) // 2]
+        img = img[(img.shape[0] - ch) // 2: (img.shape[0] + ch) // 2]
         img = PIL.Image.fromarray(img, 'RGB')
         img = img.resize((width, height), PIL.Image.LANCZOS)
         img = np.array(img)
@@ -250,16 +278,34 @@ def make_transform(
         canvas[(width - height) // 2 : (width + height) // 2, :] = img
         return canvas
 
+    def center_crop_tall(width, height, img):
+        ch = int(np.round(height * img.shape[1] / img.shape[0]))
+        if img.shape[0] < height or ch < width:
+            return None
+
+        img = img[:, (img.shape[1] - ch) // 2: (img.shape[1] + ch) // 2]  # center-crop: [width0, height0, 3] -> [width0, height, 3]
+        img = PIL.Image.fromarray(img, 'RGB')
+        img = img.resize((width, height), PIL.Image.LANCZOS)  # resize: [width0, height, 3] -> [width, height, 3]
+        img = np.array(img)
+
+        canvas = np.zeros([height, height, 3], dtype=np.uint8)  # square canvas
+        canvas[:, (height - width) // 2: (height + width) // 2] = img  # replace the middle with img
+        return canvas
+
     if transform is None:
         return functools.partial(scale, output_width, output_height)
     if transform == 'center-crop':
         if (output_width is None) or (output_height is None):
-            error ('must specify --resolution=WxH when using ' + transform + 'transform')
+            error(f'must specify --resolution=WxH when using {transform} transform')
         return functools.partial(center_crop, output_width, output_height)
     if transform == 'center-crop-wide':
         if (output_width is None) or (output_height is None):
-            error ('must specify --resolution=WxH when using ' + transform + ' transform')
+            error(f'must specify --resolution=WxH when using {transform} transform')
         return functools.partial(center_crop_wide, output_width, output_height)
+    if transform == 'center-crop-tall':
+        if (output_width is None) or (output_height is None):
+            error(f'must specify --resolution=WxH when using {transform} transform')
+        return functools.partial(center_crop_tall, output_width, output_height)
     assert False, 'unknown transform'
 
 #----------------------------------------------------------------------------
@@ -321,7 +367,7 @@ def open_dest(dest: str) -> Tuple[str, Callable[[str, Union[bytes, str]], None],
 @click.option('--source', help='Directory or archive name for input dataset', required=True, metavar='PATH')
 @click.option('--dest', help='Output directory or archive name for output dataset', required=True, metavar='PATH')
 @click.option('--max-images', help='Output only up to `max-images` images', type=int, default=None)
-@click.option('--transform', help='Input crop/resize mode', type=click.Choice(['center-crop', 'center-crop-wide']))
+@click.option('--transform', help='Input crop/resize mode', type=click.Choice(['center-crop', 'center-crop-wide', 'center-crop-tall']))
 @click.option('--resolution', help='Output resolution (e.g., \'512x512\')', metavar='WxH', type=parse_tuple)
 def convert_dataset(
     ctx: click.Context,
