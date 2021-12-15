@@ -122,6 +122,8 @@ def training_loop(
     cudnn_benchmark         = True,     # Enable torch.backends.cudnn.benchmark?
     abort_fn                = None,     # Callback function for determining whether to abort training. Must return consistent results across ranks.
     progress_fn             = None,     # Callback function for updating training progress. Called for all ranks.
+		snap_callback						= None,
+		img_callback						= None
 ):
     # Initialize.
     start_time = time.time()
@@ -354,6 +356,8 @@ def training_loop(
         if (rank == 0) and (image_snapshot_ticks is not None) and (done or cur_tick % image_snapshot_ticks == 0):
             images = torch.cat([G_ema(z=z, c=c, noise_mode='const').cpu() for z, c in zip(grid_z, grid_c)]).numpy()
             save_image_grid(images, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.png'), drange=[-1,1], grid_size=grid_size)
+            if img_callback != None:
+                img_callback(os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.png'))
 
         # Save network snapshot.
         snapshot_pkl = None
@@ -373,6 +377,8 @@ def training_loop(
             if rank == 0:
                 with open(snapshot_pkl, 'wb') as f:
                     pickle.dump(snapshot_data, f)
+                if snap_callback != None:
+                    snap_callback(snapshot_pkl)
 
         # Evaluate metrics.
         if (snapshot_data is not None) and (len(metrics) > 0):

@@ -27,7 +27,7 @@ from torch_utils import gen_utils
 # ----------------------------------------------------------------------------
 
 
-def subprocess_fn(rank, c, temp_dir):
+def subprocess_fn(rank, c, temp_dir, snap_callback=None, img_callback=None):
     dnnlib.util.Logger(file_name=os.path.join(c.run_dir, 'log.txt'), file_mode='a', should_flush=True)
 
     # Init torch.distributed.
@@ -47,13 +47,13 @@ def subprocess_fn(rank, c, temp_dir):
         custom_ops.verbosity = 'none'
 
     # Execute training loop.
-    training_loop.training_loop(rank=rank, **c)
+    training_loop.training_loop(rank=rank, snap_callback=snap_callback, img_callback=img_callback, **c)
 
 
 # ----------------------------------------------------------------------------
 
 
-def launch_training(c, desc, outdir, dry_run):
+def launch_training(c, desc, outdir, dry_run, snap_callback=None, img_callback=None):
     dnnlib.util.Logger(should_flush=True)
 
     # Pick output directory.
@@ -93,7 +93,7 @@ def launch_training(c, desc, outdir, dry_run):
     torch.multiprocessing.set_start_method('spawn')
     with tempfile.TemporaryDirectory() as temp_dir:
         if c.num_gpus == 1:
-            subprocess_fn(rank=0, c=c, temp_dir=temp_dir)
+            subprocess_fn(rank=0, c=c, temp_dir=temp_dir, snap_callback=snap_callback, img_callback=img_callback)
         else:
             torch.multiprocessing.spawn(fn=subprocess_fn, args=(c, temp_dir), nprocs=c.num_gpus)
 
@@ -123,6 +123,13 @@ def parse_comma_separated_list(s):
         return []
     return s.split(',')
 
+
+def run_shell_callback(template, substs):
+  import os, shlex, subprocess
+  e = os.environ['SHELL'] if 'SHELL' in os.environ else 'sh'
+  cmd = template.format(**{k: shlex.quote(v) for k, v in substs.items()})
+  p = subprocess.run(cmd, shell=True, stdin=subprocess.DEVNULL, check=False)
+  return p.returncode
 
 # ----------------------------------------------------------------------------
 
@@ -154,6 +161,8 @@ def parse_comma_separated_list(s):
 @click.option('--mbstd-group',  help='Minibatch std group size', metavar='INT',                 type=click.IntRange(min=1), default=4, show_default=True)
 # Misc settings.
 @click.option('--outdir',       help='Where to save the results', metavar='DIR',                type=click.Path(file_okay=False), default=os.path.join(os.getcwd(), 'training-runs'))
+@click.option('--snap-cmd',     help='Run this shell command for each model snapshot written to outdir, substituting the quoted path for %1, the current kimg for %2 and the final kimg for %3. The substituted command is passed to $SHELL -c or /bin/sh -c after forking to run detached in the background.', metavar='CMD', type=str, default=None)
+@click.option('--img-cmd',      help='Run this shell command for each image snapshot written to outdir, substituting the quoted path for %1, the current kimg for %2 and the final kimg for %3. The substituted command is passed to $SHELL -c or /bin/sh -c after forking to run detached in the background.', metavar='CMD', type=str, default=None)
 @click.option('--desc',         help='String to include in result dir name', metavar='STR',     type=str)
 @click.option('--metrics',      help='Quality metrics', metavar='[NAME|A,B,C|none]',            type=parse_comma_separated_list, default='none', show_default=True)
 @click.option('--kimg',         help='Total training duration', metavar='KIMG',                 type=click.IntRange(min=1), default=25000, show_default=True)
@@ -321,8 +330,16 @@ def main(**kwargs):
     if opts.desc is not None:
         desc += f'-{opts.desc}'
 
+		def snap_callback(snapfile):
+			if opts.snap_cmd != None:
+				run_shell_callback(opts.snap_cmd, {'filename': snapfile})
+
+		def img_callback(imgfile):
+			if opts.img_cmd != None:
+				run_shell_callback(opts.img_cmd, {'filename': imgfile})
+
     # Launch.
-    launch_training(c=c, desc=desc, outdir=opts.outdir, dry_run=opts.dry_run)
+    launch_training(c=c, desc=desc, outdir=opts.outdir, dry_run=opts.dry_run, snap_callback=snap_callback, img_callback=img_callback)
 
 
 # ----------------------------------------------------------------------------
