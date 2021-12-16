@@ -90,7 +90,8 @@ def launch_training(c, desc, outdir, dry_run, snap_callback=None, img_callback=N
 
 		# Launch processes.
 		print('Launching processes...')
-		torch.multiprocessing.set_start_method('spawn')
+		if c.num_gpus > 1:
+			torch.multiprocessing.set_start_method('spawn')
 		with tempfile.TemporaryDirectory() as temp_dir:
 				if c.num_gpus == 1:
 						subprocess_fn(rank=0, c=c, temp_dir=temp_dir, snap_callback=snap_callback, img_callback=img_callback)
