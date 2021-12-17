@@ -332,12 +332,20 @@ def main(**kwargs):
 				desc += f'-{opts.desc}'
 
 		def snap_callback(snapfile):
-			if opts.snap_cmd != None:
-				run_shell_callback(opts.snap_cmd, {'filename': snapfile})
+			nonlocal opts
+			try:
+				if opts.snap_cmd != None:
+					run_shell_callback(opts.snap_cmd, {'filename': snapfile})
+			except Exception as err:
+				print(f"in train.py snap_callback(): exception while running external command: {err}")
 
 		def img_callback(imgfile):
-			if opts.img_cmd != None:
-				run_shell_callback(opts.img_cmd, {'filename': imgfile})
+			nonlocal opts
+			try:
+				if opts.img_cmd != None:
+					run_shell_callback(opts.img_cmd, {'filename': imgfile})
+			except Exception as err:
+				print(f"in train.py img_callback(): exception while running external command: {err}")
 
 		# Launch.
 		launch_training(c=c, desc=desc, outdir=opts.outdir, dry_run=opts.dry_run, snap_callback=snap_callback, img_callback=img_callback)
