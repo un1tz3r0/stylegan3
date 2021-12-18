@@ -227,7 +227,10 @@ class ImageFolderDataset(Dataset):
                 image = np.array(PIL.Image.open(f))
         if image.ndim == 2:
             image = image[:, :, np.newaxis] # HW => HWC
-        image = image.transpose(2, 0, 1) # HWC => CHW
+        try:
+          image = image.transpose(2, 0, 1) # HWC => CHW
+        except Exception as err:
+          raise RuntimeError(f"Exception in _load_raw_image(raw_idx={raw_idx}), fname={fname}, image.shape={image.shape}: err={err}")
         return image
 
     def _load_raw_labels(self):
