@@ -96,7 +96,7 @@ def launch_training(c, desc, outdir, dry_run, snap_callback=None, img_callback=N
 				if c.num_gpus == 1:
 						subprocess_fn(rank=0, c=c, temp_dir=temp_dir, snap_callback=snap_callback, img_callback=img_callback)
 				else:
-						torch.multiprocessing.spawn(fn=subprocess_fn, args=(c, temp_dir), nprocs=c.num_gpus)
+						torch.multiprocessing.spawn(fn=subprocess_fn, args=(c, temp_dir, snap_callback, img_callback), nprocs=c.num_gpus)
 
 
 # ----------------------------------------------------------------------------
@@ -125,12 +125,64 @@ def parse_comma_separated_list(s):
 		return s.split(',')
 
 
-def run_shell_callback(template, substs):
+def shellexpand(line, args, substs):
+	import shlex
+	return " ".join([shlex.quote(word.format(*args, **substs)) for word in shlex.split(line)])
+
+def run_shell_callback(script, args=None, substs=None):
 	import os, shlex, subprocess
-	e = os.environ['SHELL'] if 'SHELL' in os.environ else 'sh'
-	cmd = template.format(**{k: shlex.quote(v) for k, v in substs.items()})
+	if args == None:
+		args = []
+	if substs == None:
+		substs = {}
+	#e = os.environ['SHELL'] if 'SHELL' in os.environ else 'sh'
+	#cmd = template.format(**{k: shlex.quote(v) for k, v in substs.items()})
+	cmd = shellexpand(script, args, substs)
 	p = subprocess.run(cmd, shell=True, stdin=subprocess.DEVNULL, check=False)
 	return p.returncode
+
+# Augmentation.
+def get_augpipe_specs():
+		augpipe_specs = {
+				'blit': dict(xflip=1, rotate90=1, xint=1),
+				'geom': dict(scale=1, rotate=1, aniso=1, xfrac=1),
+				'color': dict(brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
+				'filter': dict(imgfilter=1),
+				'noise': dict(noise=1),
+				'cutout': dict(cutout=1),
+				'bg': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1),
+				'bgc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
+				'bgcf': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1),
+				'bgcfn': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1),
+				'bgcfnc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1, cutout=1),
+				'bc': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
+				'bcf': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1),
+				'bcfn': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1),
+				'bcfnc': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1, cutout=1)
+		}
+		# add finer-grained augpipe spec flags to lookup table
+		for flagname in ['xflip', 'rotate90', 'xint', 'scale', 'rotate', 'aniso', 
+										 'xfrac', 'brightness', 'contrast', 'lumaflip', 'hue', 
+										 'saturation', 'imgfilter', 'noise', 'cutout']:
+			if not flagname in augpipe_specs:
+				flagdict = {}
+				flagdict[flagname] = 1
+				augpipe_specs[flagname] = flagdict
+		return augpipe_specs
+
+def parse_augpipe_spec(names):
+		''' parse a list of augpipe specs, returning a dict with the combined 
+		flags present in each spec's entry in augpipe_specs above'''
+		augpipe_specs = get_augpipe_specs()
+		result = {}
+		for name in names:
+			if name in augpipe_specs.keys():
+				for k,v in augpipe_specs[name].items():
+					result[k] = v
+			else:
+				print(f"Unknown augpipe_spec key name: {name}")
+		return result
+
 
 # ----------------------------------------------------------------------------
 
@@ -146,12 +198,14 @@ def run_shell_callback(template, substs):
 @click.option('--mirror',       help='Enable dataset x-flips', metavar='BOOL',                  type=bool, default=False, show_default=True)
 @click.option('--mirror-y',     help='Enable dataset y-flips', metavar='BOOL',                  type=bool, default=False, show_default=True)
 @click.option('--aug',          help='Augmentation mode',                                       type=click.Choice(['noaug', 'ada', 'fixed']), default='ada', show_default=True)
-@click.option('--augpipe',      help='Augmentation pipeline [default: bgc]',                    type=click.Choice(['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc', 'bc', 'bcf', 'bcfn', 'bcfnc']))
+@click.option('--augpipe',      help='Augmentation pipeline [default: bgc]',                    type=click.Choice(list(get_augpipe_specs().keys())), multiple=True, default=['bgc'])
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
 @click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                 type=click.IntRange(min=0), default=0, show_default=True)
 # Misc hyperparameters.
 @click.option('--gamma',        help='R1 regularization weight', metavar='FLOAT',               type=click.FloatRange(min=0), default=None)
+@click.option('--gamma-factor',        help='R1 regularization weight multiplier (applies to heuristic if no --gamma is given)', metavar='FLOAT',               type=click.FloatRange(min=0), default=1.0)
 @click.option('--p',            help='Probability for --aug=fixed', metavar='FLOAT',            type=click.FloatRange(min=0, max=1), default=0.2, show_default=True)
+@click.option('--ema-factor',   help='Scale the heuristic generator EMA halflife by this factor', metavar='FLOAT',            type=click.FloatRange(min=0), default=1.0, show_default=True)
 @click.option('--target',       help='Target value for --aug=ada', metavar='FLOAT',             type=click.FloatRange(min=0, max=1), default=0.6, show_default=True)
 @click.option('--batch-gpu',    help='Limit batch size per GPU', metavar='INT',                 type=click.IntRange(min=1))
 @click.option('--cbase',        help='Capacity multiplier', metavar='INT',                      type=click.IntRange(min=1), default=32768, show_default=True)
@@ -228,10 +282,10 @@ def main(**kwargs):
 		c.D_kwargs.block_kwargs.freeze_layers = opts.freezed
 		c.D_kwargs.epilogue_kwargs.mbstd_group_size = opts.mbstd_group
 		if opts.gamma is not None:
-				c.loss_kwargs.r1_gamma = float(opts.gamma)
+				c.loss_kwargs.r1_gamma = float(opts.gamma) * float(opts.gamma_factor)
 		else:
 				# Use heuristic from StyleGAN2-ADA
-				c.loss_kwargs.r1_gamma = 0.0002 * c.training_set_kwargs.resolution ** 2 / c.batch_size
+				c.loss_kwargs.r1_gamma = float(opts.gamma_factor) * 0.0002 * c.training_set_kwargs.resolution ** 2 / c.batch_gpu
 				print(f'Using heuristic, R1 gamma set at: {c.loss_kwargs.r1_gamma:.4f}')
 		c.G_opt_kwargs.lr = (0.002 if opts.cfg == 'stylegan2' else 0.0025) if opts.glr is None else opts.glr
 		c.D_opt_kwargs.lr = opts.dlr
@@ -256,7 +310,7 @@ def main(**kwargs):
 				raise click.ClickException('\n'.join(['--metrics can only contain the following values:'] + metric_main.list_valid_metrics()))
 
 		# Base configuration.
-		c.ema_kimg = c.batch_size * 10 / 32
+		c.ema_kimg = float(opts.ema_factor) * c.batch_gpu * 10 / 32
 		if opts.cfg == 'stylegan2':
 				c.G_kwargs.class_name = 'training.networks_stylegan2.Generator'
 				c.loss_kwargs.style_mixing_prob = 0.9 # Enable style mixing regularization.
@@ -276,29 +330,10 @@ def main(**kwargs):
 						c.loss_kwargs.blur_fade_kimg = c.batch_size * 200 / 32 # Fade out the blur during the first N kimg.
 
 		# Augmentation.
-		augpipe_specs = {
-				'blit': dict(xflip=1, rotate90=1, xint=1),
-				'geom': dict(scale=1, rotate=1, aniso=1, xfrac=1),
-				'color': dict(brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
-				'filter': dict(imgfilter=1),
-				'noise': dict(noise=1),
-				'cutout': dict(cutout=1),
-				'bg': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1),
-				'bgc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
-				'bgcf': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1),
-				'bgcfn': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1),
-				'bgcfnc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1, cutout=1),
-				'bc': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
-				'bcf': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1),
-				'bcfn': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1),
-				'bcfnc': dict(xflip=1, rotate90=1, xint=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1, cutout=1)
-		}
 
 		if opts.aug != 'noaug':
-				if opts.augpipe in augpipe_specs.keys():
-						c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **augpipe_specs[opts.augpipe])
-				else:
-						c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe')
+				augpipe_spec = parse_augpipe_spec(opts.augpipe)
+				c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **augpipe_spec)
 				if opts.aug == 'ada':
 						c.ada_target = opts.target
 				if opts.aug == 'fixed':
@@ -335,7 +370,7 @@ def main(**kwargs):
 			nonlocal opts
 			try:
 				if opts.snap_cmd != None:
-					run_shell_callback(opts.snap_cmd, {'filename': snapfile})
+					run_shell_callback(opts.snap_cmd, {'filename': snapfile, 'c': c, 'opts': opts, 'desc': desc})
 			except Exception as err:
 				print(f"in train.py snap_callback(): exception while running external command: {err}")
 
@@ -343,7 +378,7 @@ def main(**kwargs):
 			nonlocal opts
 			try:
 				if opts.img_cmd != None:
-					run_shell_callback(opts.img_cmd, {'filename': imgfile})
+					run_shell_callback(opts.img_cmd, {'filename': snapfile, 'c': c, 'opts': opts, 'desc': desc})
 			except Exception as err:
 				print(f"in train.py img_callback(): exception while running external command: {err}")
 
