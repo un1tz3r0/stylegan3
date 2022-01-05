@@ -378,7 +378,7 @@ def main(**kwargs):
 			nonlocal opts
 			try:
 				if opts.img_cmd != None:
-					run_shell_callback(opts.img_cmd, {'filename': snapfile, 'c': c, 'opts': opts, 'desc': desc})
+					run_shell_callback(opts.img_cmd, {'filename': imgfile, 'c': c, 'opts': opts, 'desc': desc})
 			except Exception as err:
 				print(f"in train.py img_callback(): exception while running external command: {err}")
 
