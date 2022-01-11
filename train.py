@@ -116,6 +116,22 @@ def init_dataset_kwargs(data):
 
 # ----------------------------------------------------------------------------
 
+#def shellexpand(line, args, substs):
+#	import shlex
+#	return " ".join([shlex.quote(word.format(*args, **substs)) for word in shlex.split(line)])
+
+
+def run_shell_callback(script, args=None, env=None):
+	import os, shlex, subprocess
+	if args == None:
+		args = []
+	if env == None:
+		env = {}
+	e = os.environ['SHELL'] if 'SHELL' in os.environ else 'sh'
+	#cmd = template.format(**{k: shlex.quote(v) for k, v in substs.items()})
+	p = subprocess.run([e, '-c', script, '--', *[str(arg) for arg in args]], stdin=subprocess.DEVNULL, check=False, **({'env': env} if len(env) > 0 else {}))
+	return p.returncode
+
 
 def parse_comma_separated_list(s):
 		if isinstance(s, list):
@@ -123,23 +139,6 @@ def parse_comma_separated_list(s):
 		if s is None or s.lower() == 'none' or s == '':
 				return []
 		return s.split(',')
-
-
-def shellexpand(line, args, substs):
-	import shlex
-	return " ".join([shlex.quote(word.format(*args, **substs)) for word in shlex.split(line)])
-
-def run_shell_callback(script, args=None, substs=None):
-	import os, shlex, subprocess
-	if args == None:
-		args = []
-	if substs == None:
-		substs = {}
-	#e = os.environ['SHELL'] if 'SHELL' in os.environ else 'sh'
-	#cmd = template.format(**{k: shlex.quote(v) for k, v in substs.items()})
-	cmd = shellexpand(script, args, substs)
-	p = subprocess.run(cmd, shell=True, stdin=subprocess.DEVNULL, check=False)
-	return p.returncode
 
 # Augmentation.
 def get_augpipe_specs():
@@ -171,7 +170,8 @@ def get_augpipe_specs():
 		return augpipe_specs
 
 def parse_augpipe_spec(names):
-		''' parse a list of augpipe specs, returning a dict with the combined 
+		''' parse an augmentation pipeline spec, which is a comma separated list of several,
+		 returning a dict with the combined 
 		flags present in each spec's entry in augpipe_specs above'''
 		augpipe_specs = get_augpipe_specs()
 		result = {}
@@ -206,6 +206,8 @@ def parse_augpipe_spec(names):
 @click.option('--gamma-factor',        help='R1 regularization weight multiplier (applies to heuristic if no --gamma is given)', metavar='FLOAT',               type=click.FloatRange(min=0), default=1.0)
 @click.option('--p',            help='Probability for --aug=fixed', metavar='FLOAT',            type=click.FloatRange(min=0, max=1), default=0.2, show_default=True)
 @click.option('--ema-factor',   help='Scale the heuristic generator EMA halflife by this factor', metavar='FLOAT',            type=click.FloatRange(min=0), default=1.0, show_default=True)
+@click.option('--blur-init',   help='Scale the initial discriminator input blurring by this factor', metavar='FLOAT',            type=click.FloatRange(min=0), default=1.0, show_default=True)
+@click.option('--blur-fade',   help='Scale the fade-out of the discriminator input blurring by this factor (<1=quicker, >1=slower)', metavar='FLOAT',            type=click.FloatRange(min=0), default=1.0, show_default=True)
 @click.option('--target',       help='Target value for --aug=ada', metavar='FLOAT',             type=click.FloatRange(min=0, max=1), default=0.6, show_default=True)
 @click.option('--batch-gpu',    help='Limit batch size per GPU', metavar='INT',                 type=click.IntRange(min=1))
 @click.option('--cbase',        help='Capacity multiplier', metavar='INT',                      type=click.IntRange(min=1), default=32768, show_default=True)
@@ -216,8 +218,6 @@ def parse_augpipe_spec(names):
 @click.option('--mbstd-group',  help='Minibatch std group size', metavar='INT',                 type=click.IntRange(min=1), default=4, show_default=True)
 # Misc settings.
 @click.option('--outdir',       help='Where to save the results', metavar='DIR',                type=click.Path(file_okay=False), default=os.path.join(os.getcwd(), 'training-runs'))
-@click.option('--snap-cmd',     help='Run this shell command for each model snapshot written to outdir, substituting the quoted path for %1, the current kimg for %2 and the final kimg for %3. The substituted command is passed to $SHELL -c or /bin/sh -c after forking to run detached in the background.', metavar='CMD', type=str, default=None)
-@click.option('--img-cmd',      help='Run this shell command for each image snapshot written to outdir, substituting the quoted path for %1, the current kimg for %2 and the final kimg for %3. The substituted command is passed to $SHELL -c or /bin/sh -c after forking to run detached in the background.', metavar='CMD', type=str, default=None)
 @click.option('--desc',         help='String to include in result dir name', metavar='STR',     type=str)
 @click.option('--metrics',      help='Quality metrics', metavar='[NAME|A,B,C|none]',            type=parse_comma_separated_list, default='none', show_default=True)
 @click.option('--kimg',         help='Total training duration', metavar='KIMG',                 type=click.IntRange(min=1), default=25000, show_default=True)
@@ -230,6 +230,9 @@ def parse_augpipe_spec(names):
 @click.option('--fp32',         help='Disable mixed-precision', metavar='BOOL',                 type=bool, default=False, show_default=True)
 @click.option('--nobench',      help='Disable cuDNN benchmarking', metavar='BOOL',              type=bool, default=False, show_default=True)
 @click.option('--workers',      help='DataLoader worker processes', metavar='INT',              type=click.IntRange(min=1), default=3, show_default=True)
+# callback settings
+@click.option('--snap-cmd',     help='Run this shell command for each model snapshot written to outdir.', metavar='CMD', type=str, default=None)
+@click.option('--img-cmd',      help='Run this shell command for each image snapshot written to outdir.', metavar='CMD', type=str, default=None)
 @click.option('-n','--dry-run', help='Print training options and exit',                         is_flag=True)
 def main(**kwargs):
 		"""Train a GAN using the techniques described in the paper
@@ -326,8 +329,8 @@ def main(**kwargs):
 						c.G_kwargs.channel_base *= 2 # Double the number of feature maps.
 						c.G_kwargs.channel_max *= 2
 						c.G_kwargs.use_radial_filters = True # Use radially symmetric downsampling filters.
-						c.loss_kwargs.blur_init_sigma = 10 # Blur the images seen by the discriminator.
-						c.loss_kwargs.blur_fade_kimg = c.batch_size * 200 / 32 # Fade out the blur during the first N kimg.
+						c.loss_kwargs.blur_init_sigma = opts.blur_init * 10 # Blur the images seen by the discriminator.
+						c.loss_kwargs.blur_fade_kimg = opts.blur_fade * c.batch_size * 200 / 32 # Fade out the blur during the first N kimg.
 
 		# Augmentation.
 
@@ -370,7 +373,7 @@ def main(**kwargs):
 			nonlocal opts
 			try:
 				if opts.snap_cmd != None:
-					run_shell_callback(opts.snap_cmd, [snapfile], {'filename': snapfile, 'c': c, 'opts': opts, 'desc': desc})
+					run_shell_callback(opts.snap_cmd, [snapfile], {'OUTDIR': opts.outdir, 'DESC': desc})
 			except Exception as err:
 				print(f"in train.py snap_callback(): exception while running external command: {err}")
 
@@ -378,7 +381,7 @@ def main(**kwargs):
 			nonlocal opts
 			try:
 				if opts.img_cmd != None:
-					run_shell_callback(opts.img_cmd, [imgfile], {'filename': imgfile, 'c': c, 'opts': opts, 'desc': desc})
+					run_shell_callback(opts.img_cmd, [imgfile], {'OUTDIR': opts.outdir, 'DESC': desc})
 			except Exception as err:
 				print(f"in train.py img_callback(): exception while running external command: {err}")
 
