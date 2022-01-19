@@ -190,7 +190,7 @@ def parse_augpipe_spec(names):
 @click.command()
 # Required.
 @click.option('--cfg',          help='Base configuration',                                      type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2']), required=True)
-@click.option('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=click.Path(exists=True, dir_okay=False), required=True)
+@click.option('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=click.Path(exists=True, dir_okay=True), required=True)
 @click.option('--gpus',         help='Number of GPUs to use', metavar='INT',                    type=click.IntRange(min=1), required=True)
 @click.option('--batch',        help='Total batch size', metavar='INT',                         type=click.IntRange(min=1), required=True)
 # Optional features.
