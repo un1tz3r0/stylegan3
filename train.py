@@ -329,8 +329,8 @@ def main(**kwargs):
 						c.G_kwargs.channel_base *= 2 # Double the number of feature maps.
 						c.G_kwargs.channel_max *= 2
 						c.G_kwargs.use_radial_filters = True # Use radially symmetric downsampling filters.
-						c.loss_kwargs.blur_init_sigma = opts.blur_init * 10 # Blur the images seen by the discriminator.
-						c.loss_kwargs.blur_fade_kimg = opts.blur_fade * c.batch_size * 200 / 32 # Fade out the blur during the first N kimg.
+						c.loss_kwargs.blur_init_sigma = float(opts.blur_init) * 10 # Blur the images seen by the discriminator.
+						c.loss_kwargs.blur_fade_kimg = float(opts.blur_fade) * c.batch_size * 200 / 32 # Fade out the blur during the first N kimg.
 
 		# Augmentation.
 
