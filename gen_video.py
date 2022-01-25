@@ -82,6 +82,7 @@ def make_transform(translate: Tuple[float,float], angle: float):
 def gen_interp_video(G,
                      mp4: str,
                      seeds: List[int],
+                     classes: List[int] = None,
                      shuffle_seed: int = None,
                      w_frames: int = 60*4,
                      kind: str = 'cubic',
@@ -116,7 +117,8 @@ def gen_interp_video(G,
         rng.shuffle(all_seeds)
 
     zs = torch.from_numpy(np.stack([np.random.RandomState(seed).randn(G.z_dim) for seed in all_seeds])).to(device)
-    ws = G.mapping(z=zs, c=None, truncation_psi=psi)
+    cs = torch.from_numpy(np.stack([np.random.RandomState(seed).randn(G.c_dim) for seed in all_seeds])).to(device)
+    ws = G.mapping(z=zs, c=cs, truncation_psi=psi)
     _ = G.synthesis(ws[:1]) # warm up
     ws = ws.reshape(grid_h, grid_w, num_keyframes, *ws.shape[1:])
 
