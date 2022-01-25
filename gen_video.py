@@ -82,7 +82,7 @@ def make_transform(translate: Tuple[float,float], angle: float):
 def gen_interp_video(G,
                      mp4: str,
                      seeds: List[int],
-                     classes: List[int] = None,
+                     labels: List[int] = None,
                      shuffle_seed: int = None,
                      w_frames: int = 60*4,
                      kind: str = 'cubic',
@@ -111,14 +111,21 @@ def gen_interp_video(G,
     all_seeds = np.zeros(num_keyframes*grid_h*grid_w, dtype=np.int64)
     for idx in range(num_keyframes*grid_h*grid_w):
         all_seeds[idx] = seeds[idx % len(seeds)]
-
+  
+    if labels != None:
+        all_labels = np.zeros(num_keyframes*grid_h*grid_w)
+        for idx in range(num_keyframes*grid_h*grid_w):
+            all_labels[idx] = labels[idx % len(labels)]
+    
     if shuffle_seed is not None:
         rng = np.random.RandomState(seed=shuffle_seed)
         rng.shuffle(all_seeds)
+        rng = np.random.RandomState(seed=shuffle_seed)
+        rng.shuffle(all_labels)
 
     zs = torch.from_numpy(np.stack([np.random.RandomState(seed).randn(G.z_dim) for seed in all_seeds])).to(device)
-    cs = torch.from_numpy(np.stack([np.random.RandomState(seed).randn(G.c_dim) for seed in all_seeds])).to(device)
-    ws = G.mapping(z=zs, c=cs, truncation_psi=psi)
+    cs = torch.from_numpy(np.stack([np.where(np.indices([G.c_dim])==label, 1, 0) for label in all_labels])).to(device)
+    ws = G.mapping(z=zs, c=cs[:1], truncation_psi=psi)
     _ = G.synthesis(ws[:1]) # warm up
     ws = ws.reshape(grid_h, grid_w, num_keyframes, *ws.shape[1:])
 
@@ -190,6 +197,7 @@ def parse_tuple(s: Union[str, Tuple[int,int]]) -> Tuple[int, int]:
 @click.command()
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=parse_range, help='List of random seeds', required=True)
+@click.option('--labels', type=parse_range, help='List of labels if class conditional network', required=False, default=None)
 @click.option('--shuffle-seed', type=int, help='Random seed to use for shuffling seed order', default=None)
 @click.option('--grid', type=parse_tuple, help='Grid width/height, e.g. \'4x3\' (default: 1x1)', default=(1,1))
 @click.option('--num-keyframes', type=int, help='Number of seeds to interpolate through.  If not specified, determine based on the length of the seeds array given by --seeds.', default=None)
@@ -200,6 +208,7 @@ def parse_tuple(s: Union[str, Tuple[int,int]]) -> Tuple[int, int]:
 def generate_images(
     network_pkl: str,
     seeds: List[int],
+    labels: Optional[List[int]],
     shuffle_seed: Optional[int],
     truncation_psi: float,
     grid: Tuple[int,int],
@@ -236,11 +245,10 @@ def generate_images(
         G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
 
     gen_interp_video(G=G, mp4=output, bitrate='12M', grid_dims=grid, num_keyframes=num_keyframes, w_frames=w_frames,
-                     seeds=seeds, shuffle_seed=shuffle_seed, psi=truncation_psi, stabilize_video=stabilize_video)
+                     seeds=seeds, labels=labels, shuffle_seed=shuffle_seed, psi=truncation_psi, stabilize_video=stabilize_video)
 
 
-# ----------------------------------------------------------------------------
-
+# ------------------------------------------------------------------------
 
 if __name__ == "__main__":
     generate_images() # pylint: disable=no-value-for-parameter
