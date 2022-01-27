@@ -37,7 +37,7 @@ def main():
 # Synthesis options (feed a list of seeds or give the projected w to synthesize)
 @click.option('--seeds', type=gen_utils.num_range, help='List of random seeds')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
-@click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
+@click.option('--class', 'class_idx', type=gen_utils.num_range, help='List of class labels (unconditional if not specified)', default=None)
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 @click.option('--projected-w', help='Projection result file; can be either .npy or .npz files', type=click.Path(exists=True, dir_okay=False), metavar='FILE')
 @click.option('--new-center', type=gen_utils.parse_new_center, help='New center for the W latent space; a seed (int) or a path to a projected dlatent (.npy/.npz)', default=None)
@@ -55,10 +55,10 @@ def generate_images(
 				snapshot_size: str,
 				seeds: Optional[List[int]],
 				truncation_psi: float,
-				class_idx: Optional[int],
+				class_idx: Optional[List[int]],
 				noise_mode: str,
 				projected_w: Optional[Union[str, os.PathLike]],
-				new_center: Tuple[str, Union[int, np.ndarray]],  # TODO
+				new_center: Tuple[str, Union[int, np.ndarray]],	 # TODO
 				save_grid: bool,
 				grid_width: int,
 				grid_height: int,
@@ -92,7 +92,7 @@ def generate_images(
 		print(f'Loading networks from "{network_pkl}"...')
 		device = torch.device('cuda')
 		with dnnlib.util.open_url(network_pkl) as f:
-				G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
+				G = legacy.load_network_pkl(f)['G_ema'].to(device)	# type: ignore
 
 		description = 'generate-images' if len(description) == 0 else description
 		# Create the run dir with the given name description
@@ -106,7 +106,7 @@ def generate_images(
 				ws, ext = gen_utils.get_w_from_file(projected_w, return_ext=True)
 				ws = torch.tensor(ws, device=device)
 				assert ws.shape[1:] == (G.num_ws, G.w_dim)
-				n_digits = int(np.log10(len(ws))) + 1  # number of digits for naming the .jpg images
+				n_digits = int(np.log10(len(ws))) + 1	 # number of digits for naming the .jpg images
 				if ext == '.npy':
 						img = gen_utils.w_to_img(G, ws, noise_mode)[0]
 						PIL.Image.fromarray(img, 'RGB').save(f'{run_dir}/proj.jpg')
@@ -136,17 +136,17 @@ def generate_images(
 
 				rnd = np.random.RandomState(0)
 				torch.manual_seed(0)
-				all_indices = list(range(70000))  # irrelevant
+				all_indices = list(range(70000))	# irrelevant
 				rnd.shuffle(all_indices)
 
-				grid_z = rnd.randn(num_images, G.z_dim)  # TODO: generate with torch, as in the training_loop.py file
+				grid_z = rnd.randn(num_images, G.z_dim)	 # TODO: generate with torch, as in the training_loop.py file
 				grid_img = gen_utils.z_to_img(G, torch.from_numpy(grid_z).to(device), label, truncation_psi, noise_mode)
 				PIL.Image.fromarray(gen_utils.create_image_grid(grid_img, (grid_width, grid_height)),
 														'RGB').save(os.path.join(run_dir, 'fakes.jpg'))
 				print('Saving individual images...')
 				for idx, z in enumerate(grid_z):
 						z = torch.from_numpy(z).unsqueeze(0).to(device)
-						w = G.mapping(z, None)  # to save the dlatent in .npy format
+						w = G.mapping(z, None)	# to save the dlatent in .npy format
 						img = gen_utils.z_to_img(G, z, label, truncation_psi, noise_mode)[0]
 						PIL.Image.fromarray(img, 'RGB').save(os.path.join(run_dir, f'img{idx:04d}.jpg'))
 						np.save(os.path.join(run_dir, f'img{idx:04d}.npy'), w.unsqueeze(0).cpu().numpy())
@@ -234,7 +234,7 @@ def random_interpolation_video(
 				outdir: Union[str, os.PathLike],
 				description: str,
 				compress: bool,
-				smoothing_sec: Optional[float] = 3.0  # for Gaussian blur; won't be a command-line parameter, change at own risk
+				smoothing_sec: Optional[float] = 3.0	# for Gaussian blur; won't be a command-line parameter, change at own risk
 ):
 		"""
 		Generate a random interpolation video using a pretrained network.
@@ -255,7 +255,7 @@ def random_interpolation_video(
 		print(f'Loading networks from "{network_pkl}"...')
 		device = torch.device('cuda')
 		with dnnlib.util.open_url(network_pkl) as f:
-				G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
+				G = legacy.load_network_pkl(f)['G_ema'].to(device)	# type: ignore
 
 		if anchor_latent_space:
 				gen_utils.anchor_latent_space(G)
@@ -336,10 +336,13 @@ def random_interpolation_video(
 		if G.c_dim != 0:
 				if class_idx is None:
 						ctx.fail('Must specify class label with --class when using a conditional network')
-				if (len(all_latents) // len(class_idx)) * len(class_idx) != len(all_latents):
+				if (num_seeds // len(class_idx)) * len(class_idx) != num_seeds:
 						ctx.fail('Number of latents (--seed) must be an integer multiple of number of classes specified using --class')
-				#label[:, class_idx] = 1
 				labels = classes_to_labels(G.c_dim, class_idx, int(len(all_latents)//len(class_idx)*slowdown), loop=True)
+				print(f"all_latents.shape = {all_latents.shape}, labels.shape = {labels.shape}, reshaping to {[*(all_latents.shape[0:-1]), G.c_dim]}")
+				labels = np.repeat(labels, all_latents.shape[1], axis = 1)
+				labels = labels.reshape([*(all_latents.shape[0:-1]), G.c_dim])
+				print(f"after resize: labels.shape = {labels.shape}")
 		else:
 				if class_idx is not None:
 						print('warn: --class=lbl ignored when running on an unconditional network')
@@ -359,6 +362,8 @@ def random_interpolation_video(
 								label = None
 						else:
 								label = torch.from_numpy(labels[frame_idx]).to(device)
+						print(label.shape)
+						print(latents.shape)
 						# Get the images with the labels
 						images = gen_utils.z_to_img(G, latents, label, truncation_psi, noise_mode)
 						# Generate the grid for this timestamp
@@ -372,7 +377,7 @@ def random_interpolation_video(
 				new_center, new_center_value = new_center
 				# We get the new center using the int (a seed) or recovered dlatent (an np.ndarray)
 				if isinstance(new_center_value, int):
-						new_w_avg = gen_utils.get_w_from_seed(G, device, new_center_value, truncation_psi=1.0)  # We want the pure dlatent
+						new_w_avg = gen_utils.get_w_from_seed(G, device, new_center_value, truncation_psi=1.0)	# We want the pure dlatent
 				elif isinstance(new_center_value, np.ndarray):
 						new_w_avg = torch.from_numpy(new_center_value).to(device)
 				else:
@@ -380,7 +385,7 @@ def random_interpolation_video(
 
 				def make_frame(t):
 						frame_idx = int(np.clip(np.round(t * fps), 0, num_frames - 1))
-						latents = torch.from_numpy(all_latents[frame_idx]).to(device)
+						latents = torch.from_numpy(np.expand_dims(all_latents[frame_idx], 0)).to(device)
 						# Do the truncation trick with this new center
 						w = G.mapping(latents, None)
 						w = new_w_avg + (w - new_w_avg) * truncation_psi
@@ -431,7 +436,7 @@ def random_interpolation_video(
 
 
 if __name__ == "__main__":
-		main()  # pylint: disable=no-value-for-parameter
+		main()	# pylint: disable=no-value-for-parameter
 
 
 # ----------------------------------------------------------------------------
