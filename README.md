@@ -10,6 +10,10 @@ capabilities (but hopefully not its complexity!).
 
 This repository adds the following (not yet the complete list):
 
+* Inference
+	* Class interpolation: specify a list of class-label indices or ranges (same format as --seeds) and the resulting animation will
+	  interpolate between classes
+
 * Dataset tool
   * Add `--center-crop-tall`: add vertical black bars to the sides instead, in the same vein as the horizontal bars in
     `--center-crop-wide`.
