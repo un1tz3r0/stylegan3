@@ -269,6 +269,10 @@ def random_interpolation_video(
 		num_frames = int(np.rint(duration_sec * fps))
 		total_duration = duration_sec * slowdown
 
+		# generate an array of class label vectors with shape and dims in shape, each of size c_dim filled with zeros with a random one
+		def labels_from_seed(seed, c_dim, shape):
+				return np.eye(c_dim)[np.random.RandomState(seed).randint(np.ones([np.prod(shape)])*c_dim)].reshape([*shape, c_dim])
+
 		print('Generating latent vectors...')
 		# TODO: let another helper function handle each case, we will use it for the grid
 		# If there's more than one seed provided and the shape isn't specified by the user
@@ -283,6 +287,8 @@ def random_interpolation_video(
 				shape = [num_frames, G.z_dim]  # This is per seed
 				# Get the z latents
 				all_latents = np.stack([np.random.RandomState(seed).randn(*shape).astype(np.float32) for seed in seeds], axis=1)
+				# Get the class labels
+				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames, num_seeds])
 
 		# If only one seed is provided, but the user specifies the grid shape:
 		elif None not in (grid_width, grid_height) and len(seeds) == 1:
@@ -290,6 +296,8 @@ def random_interpolation_video(
 				shape = [num_frames, np.prod(grid_size), G.z_dim]
 				# Since we have one seed, we use it to generate all latents
 				all_latents = np.random.RandomState(*seeds).randn(*shape).astype(np.float32)
+				# Get the class labels
+				all_labels = labels_from_seeds(class_idx, G.c_dim, shape[0:2])
 
 		# If one or more seeds are provided, and the user also specifies the grid shape:
 		elif None not in (grid_width, grid_height) and len(seeds) >= 1:
@@ -305,6 +313,8 @@ def random_interpolation_video(
 						seeds = seeds[:available_slots]
 				shape = [num_frames, G.z_dim]
 				all_latents = np.stack([np.random.RandomState(seed).randn(*shape).astype(np.float32) for seed in seeds], axis=1)
+				# Get the class labels
+				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames, num_seeds])
 
 		else:
 				ctx.fail('Error: wrong combination of arguments! Please provide either a list of seeds, one seed and the grid '
@@ -318,6 +328,7 @@ def random_interpolation_video(
 		mp4_name = f'{grid_width}x{grid_height}-slerp-{slowdown}xslowdown'
 
 		# Labels.
+		'''
 		def classes_to_labels(c_dim, class_idxes, num_steps, loop=True):
 				idxes = np.resize(class_idxes, [len(class_idxes)+1])
 				idxes[len(idxes)-1] = idxes[0]
@@ -346,10 +357,14 @@ def random_interpolation_video(
 		else:
 				if class_idx is not None:
 						print('warn: --class=lbl ignored when running on an unconditional network')
+		'''
 
 		# Let's slowdown the video, if so desired
 		while slowdown > 1:
-				all_latents, duration_sec, num_frames = gen_utils.double_slowdown(latents=all_latents,
+				all_latents, dummy_duration_sec, dummy_num_frames = gen_utils.double_slowdown(latents=all_latents,
+																																					duration=duration_sec,
+																																					frames=num_frames)
+				all_labels, duration_sec, num_frames = gen_utils.double_slowdown(latents=all_labels,
 																																					duration=duration_sec,
 																																					frames=num_frames)
 				slowdown //= 2
@@ -361,7 +376,7 @@ def random_interpolation_video(
 						if labels is None:
 								label = None
 						else:
-								label = torch.from_numpy(labels[frame_idx]).to(device)
+								label = torch.from_numpy(all_labels[frame_idx]).to(device)
 						print(label.shape)
 						print(latents.shape)
 						# Get the images with the labels
