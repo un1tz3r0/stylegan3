@@ -344,7 +344,7 @@ def random_interpolation_video(
 				f = interpolate.interp1d(srcx, data, axis=axis)
 				return f(destx)
 
-		if all_labels != None:
+		if not (all_labels is None):
 			all_labels = lerp(all_labels, num_frames, axis=0)
 
 		'''
