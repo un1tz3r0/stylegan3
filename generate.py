@@ -204,7 +204,8 @@ def generate_images(
 @click.option('--seeds', type=gen_utils.num_range, help='List of random seeds', required=True)
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--new-center', type=gen_utils.parse_new_center, help='New center for the W latent space; a seed (int) or a path to a projected dlatent (.npy/.npz)', default=None)
-@click.option('--class', 'class_idx', type=int, help='Seed for class labels to interpolate during animation (unconditional if not specified)', default=None)
+@click.option('--class-seed', 'class_idx', type=int, help='Seed for class labels to interpolate during animation (unconditional if not specified)', default=None)
+@click.option('--class-interp', 'class_interp', type=int, help='Number of frames over which to interpolate randomly seeded class labels', default=None)
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 @click.option('--anchor-latent-space', '-anchor', is_flag=True, help='Anchor the latent space to w_avg to stabilize the video')
 # Video options
@@ -224,6 +225,7 @@ def random_interpolation_video(
 				truncation_psi: float,
 				new_center: Tuple[str, Union[int, np.ndarray]],
 				class_idx: Optional[int],
+				class_interp: Optional[int],
 				noise_mode: str,
 				anchor_latent_space: bool,
 				grid_width: int,
@@ -288,7 +290,7 @@ def random_interpolation_video(
 				# Get the z latents
 				all_latents = np.stack([np.random.RandomState(seed).randn(*shape).astype(np.float32) for seed in seeds], axis=1)
 				# Get the class labels
-				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames, num_seeds])
+				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames//class_interp, num_seeds])
 
 		# If only one seed is provided, but the user specifies the grid shape:
 		elif None not in (grid_width, grid_height) and len(seeds) == 1:
@@ -297,7 +299,7 @@ def random_interpolation_video(
 				# Since we have one seed, we use it to generate all latents
 				all_latents = np.random.RandomState(*seeds).randn(*shape).astype(np.float32)
 				# Get the class labels
-				all_labels = labels_from_seeds(class_idx, G.c_dim, shape[0:2])
+				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames//class_interp, np.prod(grid_size)])
 
 		# If one or more seeds are provided, and the user also specifies the grid shape:
 		elif None not in (grid_width, grid_height) and len(seeds) >= 1:
@@ -314,7 +316,7 @@ def random_interpolation_video(
 				shape = [num_frames, G.z_dim]
 				all_latents = np.stack([np.random.RandomState(seed).randn(*shape).astype(np.float32) for seed in seeds], axis=1)
 				# Get the class labels
-				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames, num_seeds])
+				all_labels = labels_from_seeds(class_idx, G.c_dim, [num_frames//class_interp, num_seeds])
 
 		else:
 				ctx.fail('Error: wrong combination of arguments! Please provide either a list of seeds, one seed and the grid '
@@ -324,10 +326,27 @@ def random_interpolation_video(
 		all_latents = scipy.ndimage.gaussian_filter(all_latents, sigma=[smoothing_sec * fps, 0, 0], mode='wrap')
 		all_latents /= np.sqrt(np.mean(np.square(all_latents)))
 
+
+
 		# Name of the video
 		mp4_name = f'{grid_width}x{grid_height}-slerp-{slowdown}xslowdown'
 
 		# Labels.
+		def lerp(data, destcount, axis=1):
+				import numpy as np
+				from scipy import interpolate
+				srccount = data.shape[axis]
+				srcshape = data.shape
+				destshape = [sx if ax != axis else destcount for ax, sx in enumerate(data.shape)]
+				#print(f'[debug] interpolate(): {srccount=} {destcount=} {axis=} {srcshape=} {destshape=}')
+				destx = np.indices([destcount])[0]/(destcount - 1)
+				srcx = np.indices([srccount])[0]/(srccount - 1)
+				f = interpolate.interp1d(srcx, data, axis=axis)
+				return f(destx)
+
+		if all_labels != None:
+			all_labels = lerp(all_labels, num_frames, axis=0)
+
 		'''
 		def classes_to_labels(c_dim, class_idxes, num_steps, loop=True):
 				idxes = np.resize(class_idxes, [len(class_idxes)+1])
