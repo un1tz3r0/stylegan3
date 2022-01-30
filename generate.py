@@ -373,7 +373,7 @@ def random_interpolation_video(
 				def make_frame(t):
 						frame_idx = int(np.clip(np.round(t * fps), 0, num_frames - 1))
 						latents = torch.from_numpy(all_latents[frame_idx]).to(device)
-						if labels is None:
+						if all_labels is None:
 								label = None
 						else:
 								label = torch.from_numpy(all_labels[frame_idx]).to(device)
