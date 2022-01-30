@@ -204,7 +204,7 @@ def generate_images(
 @click.option('--seeds', type=gen_utils.num_range, help='List of random seeds', required=True)
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--new-center', type=gen_utils.parse_new_center, help='New center for the W latent space; a seed (int) or a path to a projected dlatent (.npy/.npz)', default=None)
-@click.option('--class', 'class_idx', type=gen_utils.num_range, help='List of class labels to interpolate during animation (unconditional if not specified)')
+@click.option('--class', 'class_idx', type=int, help='Seed for class labels to interpolate during animation (unconditional if not specified)', default=None)
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 @click.option('--anchor-latent-space', '-anchor', is_flag=True, help='Anchor the latent space to w_avg to stabilize the video')
 # Video options
@@ -223,7 +223,7 @@ def random_interpolation_video(
 				seeds: List[int],
 				truncation_psi: float,
 				new_center: Tuple[str, Union[int, np.ndarray]],
-				class_idx: Optional[Union[int, List[int]]],
+				class_idx: Optional[int],
 				noise_mode: str,
 				anchor_latent_space: bool,
 				grid_width: int,
@@ -270,7 +270,7 @@ def random_interpolation_video(
 		total_duration = duration_sec * slowdown
 
 		# generate an array of class label vectors with shape and dims in shape, each of size c_dim filled with zeros with a random one
-		def labels_from_seed(seed, c_dim, shape):
+		def labels_from_seeds(seed, c_dim, shape):
 				return np.eye(c_dim)[np.random.RandomState(seed).randint(np.ones([np.prod(shape)])*c_dim)].reshape([*shape, c_dim])
 
 		print('Generating latent vectors...')
@@ -303,7 +303,7 @@ def random_interpolation_video(
 		elif None not in (grid_width, grid_height) and len(seeds) >= 1:
 				# Case is similar to the first one
 				num_seeds = len(seeds)
-				grid_size = (grid_width, grid_height)
+				grid_size = (grid_width, grid_zzheight)
 				available_slots = np.prod(grid_size)
 				if available_slots < num_seeds:
 						diff = num_seeds - available_slots
