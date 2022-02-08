@@ -206,6 +206,7 @@ def generate_images(
 @click.option('--new-center', type=gen_utils.parse_new_center, help='New center for the W latent space; a seed (int) or a path to a projected dlatent (.npy/.npz)', default=None)
 @click.option('--class-seed', 'class_idx', type=int, help='Seed for class labels to interpolate during animation (unconditional if not specified)', default=None)
 @click.option('--class-interp', 'class_interp', type=int, help='Number of frames over which to interpolate randomly seeded class labels', default=None)
+@click.option('--lerp-duty', 'lerp_duty', type=int, help='Transition duration in easing interpolation, 1.0 - holdtime', default=0.5)
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 @click.option('--anchor-latent-space', '-anchor', is_flag=True, help='Anchor the latent space to w_avg to stabilize the video')
 # Video options
@@ -236,6 +237,7 @@ def random_interpolation_video(
 				outdir: Union[str, os.PathLike],
 				description: str,
 				compress: bool,
+				lerp_duty: Optional[float] = 0.5, # for class-label easing, equals transition duty cycle (1.0 - hold-time)
 				smoothing_sec: Optional[float] = 3.0	# for Gaussian blur; won't be a command-line parameter, change at own risk
 ):
 		"""
@@ -331,7 +333,11 @@ def random_interpolation_video(
 		# Name of the video
 		mp4_name = f'{grid_width}x{grid_height}-slerp-{slowdown}xslowdown'
 
-		# Labels.
+		# Smoothly interpolate between class label vectors, which are just a one dimensional array of floats, with one item set to 1.0 and all other elements set to 0.0.
+		# it is okay to linearly interpolate between them for smooth transitions between labels.
+		from torch_utils import easing # for smoother keyframes
+		easefn = easing.squeeze(easing.easeInOutCubic)
+
 		def lerp(data, destcount, axis=1):
 				import numpy as np
 				from scipy import interpolate
@@ -341,6 +347,10 @@ def random_interpolation_video(
 				#print(f'[debug] interpolate(): {srccount=} {destcount=} {axis=} {srcshape=} {destshape=}')
 				destx = np.indices([destcount])[0]/(destcount - 1)
 				srcx = np.indices([srccount])[0]/(srccount - 1)
+				for index in range(0, srccount):
+					if math.floor(srcx[index]) != math.ceil(srcx[index]):
+						srcx[index] = easefn(srcx[index]-math.floor(srcx[index]),
+								math.floor(srcx[index]), math.ceil(srcx[index]), 1.0, lerp_duty)
 				f = interpolate.interp1d(srcx, data, axis=axis)
 				return f(destx)
 
