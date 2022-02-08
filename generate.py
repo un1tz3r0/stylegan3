@@ -305,7 +305,7 @@ def random_interpolation_video(
 		elif None not in (grid_width, grid_height) and len(seeds) >= 1:
 				# Case is similar to the first one
 				num_seeds = len(seeds)
-				grid_size = (grid_width, grid_zzheight)
+				grid_size = (grid_width, grid_height)
 				available_slots = np.prod(grid_size)
 				if available_slots < num_seeds:
 						diff = num_seeds - available_slots
