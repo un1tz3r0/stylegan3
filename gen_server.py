@@ -85,6 +85,5 @@ async def init_app():
 		app.router.add_get("/image", image_handler)
 		return app
 
-#if __name__ == "__main__":
-#	init_func()
-web.run_app(init_app())
+if __name__ == "__main__":
+	web.run_app(init_app())
