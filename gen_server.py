@@ -41,43 +41,46 @@ async def load_model_handler(request):
 	return web.Response(text=f"Result: {result}")
 
 async def image_handler(request):
-	device = request.app['device']
-	if not 'inference.G' in request.app.keys():
-		return web.Response(text="Error, no network loaded, try /load?network_pkl=/path/to/network.pkl first.")
-	G = request.app['inference.G']
-	seed = int(request.query['seed'])
-	if 'truncation_psi' in request.query.keys():
-		truncation_psi = float(request.query['truncation_psi'])
-	else:
-		truncation_psi = 1.0
-	if 'noise_mode' in request.query.keys():
-		noise_mode = request.query['noise_mode']
-		if noise_mode not in ['const', 'random', 'none']:
-			return web.Response(text="Error, noise_mode, if given, must be one of 'const', 'random' or 'none', default is 'const'.")
-	else:
-		noise_mode = 'const'
-	noise_mode
-	if 'class' in request.query.keys():
-		if G.c_dim == 0:
-			return web.Response(text="Error, cannot specify class for unconditional network")
-		class_idx = int(request.query['class'])
-		label = torch.zeros([1, G.c_dim], device=device)
-		label[:, class_idx] = 1
-	else:
-		if G.c_dim != 0:
-			return web.Response(text="Error, must specify class for conditional network")
-		label = None
-		class_idx = None
-	z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
-	img = gen_utils.z_to_img(G, z, label, truncation_psi, noise_mode)[0]
-	im = PIL.Image.fromarray(img, 'RGB')
-	stream = BytesIO()
-	im.save(stream, "JPEG")
-	return web.Response(body=stream.getvalue(), content_type='image/jpeg')
+  try:
+    device = request.app['device']
+    if not ('inference.G' in request.app.keys()):
+      return web.Response(text="Error, no network loaded, try /load?network_pkl=/path/to/network.pkl first.")
+    G = request.app['inference.G']
+    seed = int(request.query['seed'])
+    if 'truncation_psi' in request.query.keys():
+      truncation_psi = float(request.query['truncation_psi'])
+    else:
+      truncation_psi = 1.0
+    if 'noise_mode' in request.query.keys():
+      noise_mode = request.query['noise_mode']
+      if noise_mode not in ['const', 'random', 'none']:
+        return web.Response(text="Error, noise_mode, if given, must be one of 'const', 'random' or 'none', default is 'const'.")
+    else:
+      noise_mode = 'const'
+    if 'class' in request.query.keys():
+      if G.c_dim == 0:
+        return web.Response(text="Error, cannot specify class for unconditional network")
+      class_idx = int(request.query['class'])
+      label = torch.zeros([1, G.c_dim], device=device)
+      label[:, class_idx] = 1
+    else:
+      if G.c_dim != 0:
+        return web.Response(text="Error, must specify class for conditional network")
+      label = None
+      class_idx = None
+    z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
+    img = gen_utils.z_to_img(G, z, label, truncation_psi, noise_mode)[0]
+    im = PIL.Image.fromarray(img, 'RGB')
+    from io import BytesIO
+    stream = BytesIO()
+    im.save(stream, "JPEG")
+    return web.Response(body=stream.getvalue(), content_type='image/jpeg')
+  except Exception as err:
+    return web.Response(text=f"Error: {err}")
 
-
-async def init_app():
+async def init_app(*args):
 		app = web.Application()
+		print(f"args: {args}")
 		device = torch.device('cuda')
 		app['device'] = device
 		app.router.add_get("/", index_handler)
@@ -86,4 +89,4 @@ async def init_app():
 		return app
 
 if __name__ == "__main__":
-	web.run_app(init_app())
+	web.run_app(init_app(), path='/content/server.sock')
