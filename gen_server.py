@@ -139,7 +139,7 @@ async def image_handler(request):
 		z = torch.from_numpy(zs).to(device)
 
 		imgs = gen_utils.z_to_img(G, z, label, truncation_psi, noise_mode)
-		img = create_image_grid(imgs, (grid_rows, grid_cols))
+		img = gen_utils.create_image_grid(imgs, (grid_rows, grid_cols))
 		im = PIL.Image.fromarray(img, 'RGB')
 		from io import BytesIO
 		stream = BytesIO()
