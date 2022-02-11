@@ -113,7 +113,7 @@ async def image_handler(request):
 				class_idx1 = class_idxes[1]
 			label = torch.zeros([grid_rows*grid_cols, G.c_dim], device=device)
 			for col in range(0,grid_cols):
-				a = (col/max(grid_cols-1, 1)) + interp
+				a = (col/max(grid_cols-1, 1)) + interpl
 				b = 1.0 - a
 				for row in range(0,grid_rows):
 					if class_idx0 != class_idx1:
