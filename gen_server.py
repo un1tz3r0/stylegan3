@@ -61,7 +61,7 @@ async def image_handler(request):
 		G = request.app['inference.G']
 
 		seed = int(request.query['seed'])
-		seeds = [int(word) for word in request.query['seed'].split(",")]
+		seeds = [int(word) for word in request.query['seed'].split(" ")]
 		if len(seeds) == 1:
 			seed0 = seeds[0]
 			seed1 = seeds[0]
@@ -81,7 +81,6 @@ async def image_handler(request):
 		else:
 			noise_mode = 'const'
 
-		'''
 		if 'rows' in request.query.keys():
 			grid_rows = int(request.query['rows'])
 		else:
@@ -91,7 +90,6 @@ async def image_handler(request):
 			grid_cols = int(request.query['cols'])
 		else:
 			grid_cols = 1
-		'''
 
 		if 'interpz' in request.query.keys():
 			interpz = float(request.query['interpz'])
@@ -106,7 +104,7 @@ async def image_handler(request):
 		if 'class' in request.query.keys():
 			if G.c_dim == 0:
 				return web.Response(text="Error, cannot specify class for unconditional network")
-			class_idxes = [int(word) for word in request.query['class'].split(",")]
+			class_idxes = [int(word) for word in request.query['class'].split(" ")]
 			if len(class_idxes) == 1:
 				class_idx0 = class_idxes[0]
 				class_idx1 = class_idxes[0]
