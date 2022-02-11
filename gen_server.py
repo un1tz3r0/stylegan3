@@ -60,7 +60,7 @@ async def image_handler(request):
 			return web.Response(text="Error, no network loaded, try /load?network_pkl=/path/to/network.pkl first.")
 		G = request.app['inference.G']
 
-		seed = int(request.query['seed'])
+		#seed = int(request.query['seed'])
 		seeds = [int(word) for word in request.query['seed'].split(" ")]
 		if len(seeds) == 1:
 			seed0 = seeds[0]
