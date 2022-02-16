@@ -16,6 +16,81 @@ import torch
 
 import legacy
 
+
+def init_model(network_pkl):
+	device = torch.device('cuda')
+	with dnnlib.util.open_url(network_pkl) as f:
+		G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
+	return device, G
+
+async def render_image(device, G, 
+		seeds,
+		class_idxes,
+		truncation_psi = 1.0,
+		noise_mode = 'const',
+		grid_rows = 1,
+		grid_cols = 1,
+		interpz = 0.0,
+		interpl = 0.0
+		):
+	try:
+		
+		if len(seeds) == 1:
+			seed0 = seeds[0]
+			seed1 = seeds[0]
+		else:
+			seed0 = seeds[0]
+			seed1 = seeds[1]
+
+		if class_idxes != None::
+			if G.c_dim == 0:
+				raise RuntimeError("Error, cannot specify class for unconditional network")
+			class_idxes = [int(word) for word in request.query['class'].split(" ")]
+			if len(class_idxes) == 1:
+				class_idx0 = class_idxes[0]
+				class_idx1 = class_idxes[0]
+			else:
+				class_idx0 = class_idxes[0]
+				class_idx1 = class_idxes[1]
+			label = torch.zeros([grid_rows*grid_cols, G.c_dim], device=device)
+			for col in range(0,grid_cols):
+				a = (col/max(grid_cols-1, 1)) + interpl
+				b = 1.0 - a
+				for row in range(0,grid_rows):
+					if class_idx0 != class_idx1:
+						label[row*grid_cols+col, class_idx0] = b
+						label[row*grid_cols+col, class_idx1] = a
+					else:
+						label[row*grid_cols+col, class_idx0] = 1
+		else:
+			if G.c_dim != 0:
+				raise ValueError("Error, must specify class for conditional network")
+			label = None
+			class_idx = None
+
+		# generate latent z interpolation
+		z0 = np.random.RandomState(seed0).randn(G.z_dim)
+		z1 = np.random.RandomState(seed1).randn(G.z_dim)
+		zs = np.zeros([grid_rows * grid_cols, G.z_dim])
+		for row in range(0, grid_cols):
+			a = row/max(1,(grid_rows-1)) + interpz
+			zi = gen_utils.slerp(a, z0, z1)
+			for col in range(0, grid_rows):
+				zs[row * grid_cols + col, :] = zi
+		z = torch.from_numpy(zs).to(device)
+
+		imgs = gen_utils.z_to_img(G, z, label, truncation_psi, noise_mode)
+		img = gen_utils.create_image_grid(imgs, (grid_rows, grid_cols))
+		im = PIL.Image.fromarray(img, 'RGB')
+		from io import BytesIO
+		with BytesIO() as stream:
+			im.save(stream, "JPEG")
+			return stream.value()
+	except Exception as err:
+		raise
+
+
+
 async def index_handler(request):
 	model_is_loaded = 'inference.G' in request.app.keys()
 	return web.Response(text=f"Status: model_is_loaded={model_is_loaded}")
