@@ -1,3 +1,7 @@
+This fork contains many customisations and new scripts to support my [colab notebook](https://colab.research.google.com/github/un1tz3r0/stylegan3/blob/main/stylegan3_training_and_inference.ipynb)
+
+*Original README:*
+
 # StyleGAN3-Fun<br><sub>Let's have fun with StyleGAN2/ADA/3!</sub>
 
 SOTA GANs are hard to train and to explore, and StyleGAN2/ADA/3 are no different. The point of this repository is to allow
